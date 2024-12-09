@@ -5,9 +5,17 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
     
     function isOwner(userId) {
       return request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return request.auth.token.admin == true;
     }
     
     function hasMatchWith(otherUserId) {
@@ -16,61 +24,116 @@ service cloud.firestore {
     }
     
     function isValidUser() {
-      return request.resource.data.keys().hasAll(['name', 'email', 'createdAt']) &&
-             request.resource.data.name is string &&
-             request.resource.data.email is string &&
-             request.resource.data.createdAt is timestamp;
+      let data = request.resource.data;
+      return data.keys().hasAll(['displayName', 'email', 'createdAt', 'updatedAt']) &&
+             data.displayName is string &&
+             data.displayName.size() >= 2 &&
+             data.displayName.size() <= 50 &&
+             data.email is string &&
+             data.email.matches('^[^@]+@[^@]+\\.[^@]+$') &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidLocation(location) {
+      return location is map &&
+             'latitude' in location &&
+             'longitude' in location &&
+             location.latitude is number &&
+             location.latitude >= -90 &&
+             location.latitude <= 90 &&
+             location.longitude is number &&
+             location.longitude >= -180 &&
+             location.longitude <= 180;
+    }
+
+    function isValidMessage(message) {
+      return message.keys().hasAll(['text', 'senderId', 'timestamp']) &&
+             message.text is string &&
+             message.text.size() > 0 &&
+             message.text.size() <= 1000 &&
+             message.senderId == request.auth.uid &&
+             message.timestamp is timestamp;
     }
     
     // Reglas para usuarios
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser();
-      allow update: if isAuthenticated() && isOwner(userId);
-      allow delete: if isAuthenticated() && isOwner(userId);
+      allow read: if isAuthenticated() && isEmailVerified();
+      allow create: if isAuthenticated() && 
+                   isEmailVerified() && 
+                   isOwner(userId) && 
+                   isValidUser();
+      allow update: if isAuthenticated() && 
+                   isEmailVerified() && 
+                   isOwner(userId) &&
+                   (!('location' in request.resource.data) || isValidLocation(request.resource.data.location));
+      allow delete: if isAuthenticated() && 
+                   isEmailVerified() && 
+                   isOwner(userId);
     }
     
     // Reglas para matches
     match /matches/{matchId} {
-      allow read: if isAuthenticated() && resource.data.users.hasAny([request.auth.uid]);
+      allow read: if isAuthenticated() && 
+                 isEmailVerified() && 
+                 resource.data.users.hasAny([request.auth.uid]);
       allow create: if isAuthenticated() && 
-                      request.resource.data.users.hasAll([request.auth.uid]) &&
-                      request.resource.data.users.size() == 2;
-      allow update: if isAuthenticated() && resource.data.users.hasAny([request.auth.uid]);
-      allow delete: if false; // No permitir eliminación de matches
+                   isEmailVerified() && 
+                   request.resource.data.users.hasAll([request.auth.uid]) &&
+                   request.resource.data.users.size() == 2 &&
+                   request.resource.data.createdAt is timestamp;
+      allow update: if isAuthenticated() && 
+                   isEmailVerified() && 
+                   resource.data.users.hasAny([request.auth.uid]) &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActivity', 'lastMessage']);
+      allow delete: if false; // Solo desde el backend
     }
     
     // Reglas para mensajes
     match /messages/{messageId} {
       allow read: if isAuthenticated() && 
-                    exists(/databases/$(database)/documents/matches/$(resource.data.conversationId)) &&
-                    get(/databases/$(database)/documents/matches/$(resource.data.conversationId)).data.users.hasAny([request.auth.uid]);
+                 isEmailVerified() && 
+                 exists(/databases/$(database)/documents/matches/$(resource.data.conversationId)) &&
+                 get(/databases/$(database)/documents/matches/$(resource.data.conversationId)).data.users.hasAny([request.auth.uid]);
       allow create: if isAuthenticated() && 
-                     request.resource.data.senderId == request.auth.uid &&
-                     exists(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)) &&
-                     get(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)).data.users.hasAll([request.auth.uid]);
+                   isEmailVerified() && 
+                   isValidMessage(request.resource.data) &&
+                   exists(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)) &&
+                   get(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)).data.users.hasAll([request.auth.uid]);
       allow update, delete: if false; // No permitir modificación o eliminación de mensajes
     }
     
     // Reglas para notificaciones
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if false; // Solo desde Cloud Functions
+      allow read: if isAuthenticated() && 
+                 isEmailVerified() && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if false; // Solo desde el backend
       allow update: if isAuthenticated() && 
-                     resource.data.userId == request.auth.uid &&
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
-      allow delete: if false;
+                   isEmailVerified() && 
+                   resource.data.userId == request.auth.uid &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']) &&
+                   request.resource.data.readAt is timestamp;
+      allow delete: if false; // Solo desde el backend
     }
     
     // Reglas para likes
     match /likes/{likeId} {
       allow read: if isAuthenticated() && 
-                    (resource.data.fromUser == request.auth.uid || 
-                     resource.data.toUser == request.auth.uid);
+                 isEmailVerified() && 
+                 (resource.data.fromUser == request.auth.uid || 
+                  resource.data.toUser == request.auth.uid);
       allow create: if isAuthenticated() && 
-                     request.resource.data.fromUser == request.auth.uid &&
-                     request.resource.data.timestamp is timestamp;
-      allow update, delete: if false;
+                   isEmailVerified() && 
+                   request.resource.data.fromUser == request.auth.uid &&
+                   request.resource.data.timestamp is timestamp &&
+                   request.resource.data.toUser != request.auth.uid; // No permitir auto-likes
+      allow update, delete: if false; // Solo desde el backend
+    }
+
+    // Regla por defecto: denegar todo lo demás
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
