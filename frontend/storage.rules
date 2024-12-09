@@ -5,40 +5,87 @@ service firebase.storage {
     function isAuthenticated() {
       return request.auth != null;
     }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isValidUser() {
+      return isAuthenticated() && isEmailVerified();
+    }
     
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
+
+    function isAdmin() {
+      return request.auth.token.admin == true;
+    }
     
     function isValidImage() {
       return request.resource.contentType.matches('image/.*') &&
-             request.resource.size < 5 * 1024 * 1024; // 5MB max
+             request.resource.size < 5 * 1024 * 1024 && // 5MB max
+             request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
+    }
+
+    function isValidFileName(fileName) {
+      return fileName.size() < 100 &&
+             fileName.matches('^[\\w\\-. ]+$');
     }
     
     // Reglas para fotos de perfil
     match /profile-photos/{userId}/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
+      allow read: if isValidUser();
+      allow create, update: if isValidUser() && 
                     isOwner(userId) && 
-                    isValidImage();
+                    isValidImage() &&
+                    isValidFileName(fileName) &&
+                    fileName.matches('^profile\\.(jpg|jpeg|png|gif|webp)$');
+      allow delete: if isValidUser() && 
+                   (isOwner(userId) || isAdmin());
     }
     
     // Reglas para miniaturas de fotos de perfil
     match /profile-photos/{userId}/thumbs/{fileName} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
-                    isOwner(userId) && 
-                    isValidImage();
-    }
-    
-    // Reglas para archivos temporales
-    match /temp/{userId}/{fileName} {
-      allow read: if isAuthenticated() && isOwner(userId);
-      allow write: if isAuthenticated() && 
+      allow read: if isValidUser();
+      allow create, update: if isValidUser() && 
                     isOwner(userId) && 
                     isValidImage() &&
-                    request.resource.size < 10 * 1024 * 1024; // 10MB max para archivos temporales
-      allow delete: if isAuthenticated() && isOwner(userId);
+                    isValidFileName(fileName) &&
+                    fileName.matches('^thumb_\\d+x\\d+\\.(jpg|jpeg|png|gif|webp)$');
+      allow delete: if isValidUser() && 
+                   (isOwner(userId) || isAdmin());
+    }
+    
+    // Reglas para archivos temporales (se eliminan automáticamente después de 24h)
+    match /temp/{userId}/{fileName} {
+      allow read: if isValidUser() && isOwner(userId);
+      allow create: if isValidUser() && 
+                    isOwner(userId) && 
+                    isValidImage() &&
+                    isValidFileName(fileName) &&
+                    request.resource.size < 10 * 1024 * 1024 && // 10MB max
+                    request.resource.timeCreated + duration.value(24, 'h') > request.time;
+      allow delete: if isValidUser() && isOwner(userId);
+    }
+
+    // Reglas para imágenes de chat
+    match /chat-images/{chatId}/{fileName} {
+      allow read: if isValidUser() &&
+                 exists(/databases/$(database)/documents/chats/$(chatId)) &&
+                 firestore.get(/databases/$(database)/documents/chats/$(chatId)).data.participants[request.auth.uid] != null;
+      allow create: if isValidUser() &&
+                   exists(/databases/$(database)/documents/chats/$(chatId)) &&
+                   firestore.get(/databases/$(database)/documents/chats/$(chatId)).data.participants[request.auth.uid] != null &&
+                   isValidImage() &&
+                   isValidFileName(fileName) &&
+                   fileName.matches('^[0-9]+_[\\w-]+\\.(jpg|jpeg|png|gif|webp)$');
+      allow delete: if false; // No permitir eliminación de imágenes de chat
+    }
+
+    // Denegar acceso a todo lo demás
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }
