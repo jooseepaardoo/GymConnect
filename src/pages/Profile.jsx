@@ -5,6 +5,10 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
 import { db, storage, auth } from '../firebase/config';
 import { setUser } from '../store/slices/authSlice';
+import ProfileStats from '../components/ProfileStats';
+import Achievements from '../components/Achievements';
+import TrainingSuggestions from '../components/TrainingSuggestions';
+import PrivacySettings from '../components/PrivacySettings';
 
 const objectives = [
   'Perder peso',
@@ -250,6 +254,13 @@ function Profile() {
             </div>
           </form>
         </div>
+      </div>
+
+      <div className="mt-8 space-y-8">
+        <ProfileStats userId={user.uid} />
+        <Achievements userId={user.uid} />
+        <TrainingSuggestions userId={user.uid} />
+        <PrivacySettings userId={user.uid} />
       </div>
     </div>
   );
