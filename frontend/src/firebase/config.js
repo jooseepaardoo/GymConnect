@@ -1,13 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 
+// NOTA: Estas credenciales son públicas y solo permiten autenticación
+// Todas las operaciones sensibles se realizan en el backend
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyCEMa0RWuJcT_VHI24gWBTCMHgZpV30F7s",
+  authDomain: "gymconnect-70425.firebaseapp.com",
+  projectId: "gymconnect-70425"
 };
 
 const app = initializeApp(firebaseConfig);
