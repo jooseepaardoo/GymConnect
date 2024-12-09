@@ -1,0 +1,44 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Funciones de ayuda
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*') &&
+             request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+    
+    // Reglas para fotos de perfil
+    match /profile-photos/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                    isOwner(userId) && 
+                    isValidImage();
+    }
+    
+    // Reglas para miniaturas de fotos de perfil
+    match /profile-photos/{userId}/thumbs/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                    isOwner(userId) && 
+                    isValidImage();
+    }
+    
+    // Reglas para archivos temporales
+    match /temp/{userId}/{fileName} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && 
+                    isOwner(userId) && 
+                    isValidImage() &&
+                    request.resource.size < 10 * 1024 * 1024; // 10MB max para archivos temporales
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+  }
+}

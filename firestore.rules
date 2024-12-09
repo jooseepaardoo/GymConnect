@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Funciones de ayuda
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function hasMatchWith(otherUserId) {
+      return exists(/databases/$(database)/documents/matches/{matchId}) &&
+        getAfter(/databases/$(database)/documents/matches/{matchId}).data.users.hasAll([request.auth.uid, otherUserId]);
+    }
+    
+    function isValidUser() {
+      return request.resource.data.keys().hasAll(['name', 'email', 'createdAt']) &&
+             request.resource.data.name is string &&
+             request.resource.data.email is string &&
+             request.resource.data.createdAt is timestamp;
+    }
+    
+    // Reglas para usuarios
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser();
+      allow update: if isAuthenticated() && isOwner(userId);
+      allow delete: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // Reglas para matches
+    match /matches/{matchId} {
+      allow read: if isAuthenticated() && resource.data.users.hasAny([request.auth.uid]);
+      allow create: if isAuthenticated() && 
+                      request.resource.data.users.hasAll([request.auth.uid]) &&
+                      request.resource.data.users.size() == 2;
+      allow update: if isAuthenticated() && resource.data.users.hasAny([request.auth.uid]);
+      allow delete: if false; // No permitir eliminación de matches
+    }
+    
+    // Reglas para mensajes
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && 
+                    exists(/databases/$(database)/documents/matches/$(resource.data.conversationId)) &&
+                    get(/databases/$(database)/documents/matches/$(resource.data.conversationId)).data.users.hasAny([request.auth.uid]);
+      allow create: if isAuthenticated() && 
+                     request.resource.data.senderId == request.auth.uid &&
+                     exists(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)) &&
+                     get(/databases/$(database)/documents/matches/$(request.resource.data.conversationId)).data.users.hasAll([request.auth.uid]);
+      allow update, delete: if false; // No permitir modificación o eliminación de mensajes
+    }
+    
+    // Reglas para notificaciones
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if false; // Solo desde Cloud Functions
+      allow update: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      allow delete: if false;
+    }
+    
+    // Reglas para likes
+    match /likes/{likeId} {
+      allow read: if isAuthenticated() && 
+                    (resource.data.fromUser == request.auth.uid || 
+                     resource.data.toUser == request.auth.uid);
+      allow create: if isAuthenticated() && 
+                     request.resource.data.fromUser == request.auth.uid &&
+                     request.resource.data.timestamp is timestamp;
+      allow update, delete: if false;
+    }
+  }
+}
