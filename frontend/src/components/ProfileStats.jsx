@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import api from '../services/api';
 
 function ProfileStats({ userId }) {
   const [stats, setStats] = useState({
@@ -15,65 +14,8 @@ function ProfileStats({ userId }) {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Obtener matches
-        const matchesQuery = query(
-          collection(db, 'matches'),
-          where('users', 'array-contains', userId)
-        );
-        const matchesSnapshot = await getDocs(matchesQuery);
-        const matchesCount = matchesSnapshot.size;
-
-        // Obtener likes recibidos
-        const likesQuery = query(
-          collection(db, 'likes'),
-          where('toUser', '==', userId)
-        );
-        const likesSnapshot = await getDocs(likesQuery);
-        const likesCount = likesSnapshot.size;
-
-        // Obtener mensajes enviados
-        const messagesQuery = query(
-          collection(db, 'messages'),
-          where('senderId', '==', userId)
-        );
-        const messagesSnapshot = await getDocs(messagesQuery);
-        const messagesCount = messagesSnapshot.size;
-
-        // Calcular conexiones exitosas (matches con al menos 5 mensajes intercambiados)
-        let successfulCount = 0;
-        let activeChatsCount = 0;
-        const now = new Date();
-
-        for (const match of matchesSnapshot.docs) {
-          const matchId = match.id;
-          const messagesInMatchQuery = query(
-            collection(db, 'messages'),
-            where('conversationId', '==', matchId)
-          );
-          const messagesInMatch = await getDocs(messagesInMatchQuery);
-          
-          if (messagesInMatch.size >= 5) {
-            successfulCount++;
-          }
-
-          // Verificar si hay mensajes en los últimos 7 días
-          const recentMessages = messagesInMatch.docs.some(msg => {
-            const msgDate = msg.data().timestamp?.toDate();
-            return msgDate && (now - msgDate) / (1000 * 60 * 60 * 24) <= 7;
-          });
-
-          if (recentMessages) {
-            activeChatsCount++;
-          }
-        }
-
-        setStats({
-          matches: matchesCount,
-          likes: likesCount,
-          messagesSent: messagesCount,
-          successfulConnections: successfulCount,
-          activeChats: activeChatsCount,
-        });
+        const response = await api.get(`/users/${userId}/stats`);
+        setStats(response);
       } catch (error) {
         console.error('Error al obtener estadísticas:', error);
       } finally {
