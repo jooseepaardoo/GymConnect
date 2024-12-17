@@ -27,13 +27,21 @@ const api = {
 
   async post(endpoint, data) {
     const token = await getAuthToken();
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+    };
+
+    // Si data es FormData, no establecer Content-Type
+    // El navegador lo establecerá automáticamente con el boundary correcto
+    if (!(data instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+      data = JSON.stringify(data);
+    }
+
     const response = await fetch(`${API_URL}${endpoint}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
+      headers,
+      body: data,
     });
     if (!response.ok) {
       throw new Error('Network response was not ok');

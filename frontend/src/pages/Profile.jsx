@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
-import { db, storage, auth } from '../firebase/config';
+import { auth } from '../firebase/config';
+import api from '../services/api';
 import { setUser } from '../store/slices/authSlice';
 import ProfileStats from '../components/ProfileStats';
 import Achievements from '../components/Achievements';
@@ -46,10 +45,11 @@ function Profile() {
   useEffect(() => {
     const fetchProfile = async () => {
       if (user?.uid) {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setProfileData(docSnap.data());
+        try {
+          const response = await api.get(`/users/${user.uid}/profile`);
+          setProfileData(response);
+        } catch (error) {
+          console.error('Error al obtener perfil:', error);
         }
       }
     };
@@ -63,13 +63,13 @@ function Profile() {
 
     setLoading(true);
     try {
-      const storageRef = ref(storage, `profile-photos/${user.uid}`);
-      await uploadBytes(storageRef, file);
-      const photoURL = await getDownloadURL(storageRef);
+      const formData = new FormData();
+      formData.append('photo', file);
+      
+      const response = await api.post(`/users/${user.uid}/photo`, formData);
+      const photoURL = response.photoURL;
 
       await updateProfile(auth.currentUser, { photoURL });
-      await updateDoc(doc(db, 'users', user.uid), { photoURL });
-
       setProfileData((prev) => ({ ...prev, photoURL }));
       dispatch(setUser({ ...user, photoURL }));
     } catch (error) {
@@ -84,7 +84,7 @@ function Profile() {
     setLoading(true);
 
     try {
-      await updateDoc(doc(db, 'users', user.uid), profileData);
+      await api.put(`/users/${user.uid}/profile`, profileData);
       await updateProfile(auth.currentUser, {
         displayName: profileData.name,
       });

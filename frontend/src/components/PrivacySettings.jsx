@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import api from '../services/api';
 import { Switch } from '@headlessui/react';
 
 const DEFAULT_SETTINGS = {
@@ -24,11 +23,10 @@ function PrivacySettings({ userId }) {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        const userData = userDoc.data();
+        const response = await api.get(`/users/${userId}/privacy-settings`);
         setSettings({
           ...DEFAULT_SETTINGS,
-          ...userData.privacySettings,
+          ...response,
         });
       } catch (error) {
         console.error('Error al obtener configuración:', error);
@@ -48,10 +46,7 @@ function PrivacySettings({ userId }) {
         [setting]: !settings[setting],
       };
       
-      await updateDoc(doc(db, 'users', userId), {
-        privacySettings: newSettings,
-      });
-      
+      await api.put(`/users/${userId}/privacy-settings`, newSettings);
       setSettings(newSettings);
     } catch (error) {
       console.error('Error al actualizar configuración:', error);
